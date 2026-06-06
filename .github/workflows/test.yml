@@ -1,0 +1,37 @@
+name: Self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the clean fixture (must pass)
+        uses: ./
+        with:
+          paths: fixtures/clean/Sources
+          config: fixtures/clean/.solid.yml
+
+      - name: Lint the violation fixture (must fail)
+        id: must_fail
+        continue-on-error: true
+        uses: ./
+        with:
+          paths: fixtures/violation/Sources
+          config: fixtures/violation/.solid.yml
+
+      - name: Assert the violation run failed
+        shell: bash
+        run: |
+          [ "${{ steps.must_fail.outcome }}" = "failure" ] \
+            || { echo "::error::The violation fixture did NOT fail the lint step"; exit 1; }

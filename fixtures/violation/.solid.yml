@@ -1,0 +1,11 @@
+alwaysAllow:
+  - Foundation
+  - SwiftUI
+
+layers:
+  - name: Domain
+    paths: ["Sources/Domain/**"]
+    deny: [Presentation]
+  - name: Presentation
+    paths: ["Sources/Presentation/**"]
+    deny: [Domain]
