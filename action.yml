@@ -1,0 +1,97 @@
+name: 'solid-like-a-rock'
+description: 'Enforce Swift architecture import rules (Clean Architecture / SOLID) with inline PR annotations.'
+author: 'Nenad Vulic'
+branding:
+  icon: 'shield'
+  color: 'orange'
+
+inputs:
+  version:
+    description: 'solid-like-a-rock release to use (e.g. "0.6.0"). Linux binaries start at 0.6.0.'
+    default: 'latest'
+  paths:
+    description: 'Directories or files to lint.'
+    default: '.'
+  config:
+    description: 'Path to .solid.yml. Defaults to the tool''s own discovery (walks up from the working directory).'
+    default: ''
+  baseline:
+    description: 'Path to a baseline JSON; violations recorded there are ignored.'
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve version and platform
+      id: meta
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REQUESTED: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        REPO="nenadvulic/solid-like-a-rock"
+        if [ "$REQUESTED" = "latest" ]; then
+          VERSION=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/latest" \
+            | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          [ -n "$VERSION" ] || { echo "::error::Could not resolve the latest release of $REPO"; exit 1; }
+        else
+          VERSION="${REQUESTED#v}"
+        fi
+        case "$RUNNER_OS" in
+          Linux)
+            ARCH=$(uname -m)   # x86_64 or aarch64
+            ASSET="solid-like-a-rock-linux-$ARCH.tar.gz" ;;
+          macOS)
+            ASSET="solid-like-a-rock-macos-universal.tar.gz" ;;
+          *)
+            echo "::error::Unsupported runner OS: $RUNNER_OS (Linux and macOS only)"; exit 1 ;;
+        esac
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+        echo "Using solid-like-a-rock $VERSION ($ASSET)"
+
+    - name: Cache the binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.solid-like-a-rock/bin
+        key: solid-like-a-rock-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.asset }}
+
+    - name: Download and verify
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.meta.outputs.version }}
+        ASSET: ${{ steps.meta.outputs.asset }}
+      run: |
+        set -euo pipefail
+        REPO="nenadvulic/solid-like-a-rock"
+        BASE="https://github.com/$REPO/releases/download/v$VERSION"
+        TMP=$(mktemp -d)
+        if ! curl -fsSL "$BASE/$ASSET" -o "$TMP/$ASSET"; then
+          echo "::error::Could not download $ASSET for v$VERSION. Linux binaries start at v0.6.0 — pin 'version: 0.6.0' or newer, or use a macOS runner. Releases: https://github.com/$REPO/releases"
+          exit 1
+        fi
+        curl -fsSL "$BASE/$ASSET.sha256" -o "$TMP/$ASSET.sha256"
+        cd "$TMP"
+        if command -v sha256sum >/dev/null; then sha256sum -c "$ASSET.sha256"; else shasum -a 256 -c "$ASSET.sha256"; fi \
+          || { echo "::error::Checksum mismatch for $ASSET — re-run the job; if it persists, open an issue on $REPO"; exit 1; }
+        mkdir -p ~/.solid-like-a-rock/bin
+        tar -xzf "$ASSET" -C ~/.solid-like-a-rock/bin
+        chmod +x ~/.solid-like-a-rock/bin/solid-like-a-rock
+
+    - name: Lint
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        CONFIG: ${{ inputs.config }}
+        BASELINE: ${{ inputs.baseline }}
+      run: |
+        set -euo pipefail
+        ARGS=(lint --reporter github)
+        [ -n "$CONFIG" ] && ARGS+=(--config "$CONFIG")
+        [ -n "$BASELINE" ] && ARGS+=(--baseline "$BASELINE")
+        # shellcheck disable=SC2086 — intentional word splitting on user paths
+        ~/.solid-like-a-rock/bin/solid-like-a-rock "${ARGS[@]}" $PATHS
