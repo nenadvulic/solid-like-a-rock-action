@@ -32,8 +32,9 @@ runs:
         set -euo pipefail
         REPO="nenadvulic/solid-like-a-rock"
         if [ "$REQUESTED" = "latest" ]; then
-          VERSION=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases/latest" \
+          RELEASE_JSON=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/latest")
+          VERSION=$(printf '%s' "$RELEASE_JSON" \
             | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
           [ -n "$VERSION" ] || { echo "::error::Could not resolve the latest release of $REPO"; exit 1; }
         else
