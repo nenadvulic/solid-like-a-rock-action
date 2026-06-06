@@ -25,7 +25,7 @@ jobs:
 | Input | Default | Description |
 |-------|---------|-------------|
 | `version` | `latest` | solid-like-a-rock release to use (e.g. `0.6.0`). Linux binaries start at 0.6.0. |
-| `paths` | `.` | Directories or files to lint. |
+| `paths` | `.` | Directories or files to lint (space-separated; individual paths must not contain spaces). |
 | `config` | _(tool discovery)_ | Path to `.solid.yml`; by default the tool walks up from the working directory. |
 | `baseline` | _(none)_ | Path to a baseline JSON; only new violations fail. |
 
