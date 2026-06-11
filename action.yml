@@ -18,6 +18,9 @@ inputs:
   baseline:
     description: 'Path to a baseline JSON; violations recorded there are ignored.'
     default: ''
+  exclude:
+    description: 'Space-separated path fragments to skip (e.g. ".build Pods checkouts"); added to the config''s own exclude list. Fragments must not contain spaces.'
+    default: ''
 
 runs:
   using: 'composite'
@@ -89,10 +92,17 @@ runs:
         PATHS: ${{ inputs.paths }}
         CONFIG: ${{ inputs.config }}
         BASELINE: ${{ inputs.baseline }}
+        EXCLUDE: ${{ inputs.exclude }}
       run: |
         set -euo pipefail
         ARGS=(lint --reporter github)
         [ -n "$CONFIG" ] && ARGS+=(--config "$CONFIG")
         [ -n "$BASELINE" ] && ARGS+=(--baseline "$BASELINE")
-        # shellcheck disable=SC2086 — intentional word splitting on user paths
-        ~/.solid-like-a-rock/bin/solid-like-a-rock "${ARGS[@]}" $PATHS
+        # --exclude consumes every value up to the next option, so it must come
+        # AFTER the positional paths or it would swallow them. shellcheck
+        # disable=SC2086 — intentional word splitting on user paths/fragments.
+        if [ -n "$EXCLUDE" ]; then
+          ~/.solid-like-a-rock/bin/solid-like-a-rock "${ARGS[@]}" $PATHS --exclude $EXCLUDE
+        else
+          ~/.solid-like-a-rock/bin/solid-like-a-rock "${ARGS[@]}" $PATHS
+        fi
