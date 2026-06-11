@@ -1,0 +1,78 @@
+name: Publish
+
+# Triggered by the main solid-like-a-rock repo after it publishes a release
+# (via repository_dispatch), or manually. Tags a fresh vX.Y.Z for this action,
+# advances the floating v1 tag, and publishes a GitHub Release — which refreshes
+# the Marketplace listing. The action resolves the latest tool release at
+# runtime, so this keeps the published tags/listing in step with the tool.
+
+on:
+  repository_dispatch:
+    types: [tool-released]
+  workflow_dispatch:
+    inputs:
+      tool_version:
+        description: 'Tool release that triggered this (e.g. v0.8.0). Informational; used in the release notes.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # create tags + the GitHub Release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full tag history to compute the next version
+
+      - name: Compute the next action version
+        id: ver
+        env:
+          # repository_dispatch carries client_payload; workflow_dispatch carries inputs.
+          TOOL_VERSION: ${{ github.event.client_payload.tool_version || github.event.inputs.tool_version }}
+        run: |
+          set -euo pipefail
+          # The action follows its own semver: bump the patch of the latest vX.Y.Z tag.
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+          LATEST="${LATEST:-v1.0.0}"
+          BASE="${LATEST#v}"
+          MAJOR="${BASE%%.*}"; REST="${BASE#*.}"; MINOR="${REST%%.*}"; PATCH="${REST##*.}"
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "next=$NEXT"        >> "$GITHUB_OUTPUT"
+          echo "major=v${MAJOR}"   >> "$GITHUB_OUTPUT"
+          echo "tool=${TOOL_VERSION:-latest}" >> "$GITHUB_OUTPUT"
+          echo "Publishing $NEXT (tracks tool ${TOOL_VERSION:-latest}), moving v${MAJOR}"
+
+      - name: Tag and advance the floating major tag
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+          MAJOR: ${{ steps.ver.outputs.major }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
+            echo "Tag $NEXT already exists — nothing to publish."
+            exit 0
+          fi
+          git config user.name "Nenad VULIC"
+          git config user.email "nenad@keeponapps.com"
+          git tag "$NEXT"
+          git tag -f "$MAJOR"
+          git push origin "$NEXT"
+          git push -f origin "$MAJOR"
+
+      - name: Publish the GitHub Release (refreshes the Marketplace listing)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.ver.outputs.next }}
+          TOOL: ${{ steps.ver.outputs.tool }}
+        run: |
+          set -euo pipefail
+          if gh release view "$NEXT" >/dev/null 2>&1; then
+            echo "Release $NEXT already exists — skipping."
+            exit 0
+          fi
+          gh release create "$NEXT" \
+            --title "$NEXT" \
+            --notes "Tracks solid-like-a-rock ${TOOL}. The action resolves the latest tool release at runtime, so existing \`@v1\` users are already up to date."

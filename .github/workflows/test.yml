@@ -35,3 +35,10 @@ jobs:
         run: |
           [ "${{ steps.must_fail.outcome }}" = "failure" ] \
             || { echo "::error::The violation fixture did NOT fail the lint step"; exit 1; }
+
+      - name: Excluding the offending path turns the failure into a pass
+        uses: ./
+        with:
+          paths: fixtures/violation/Sources
+          config: fixtures/violation/.solid.yml
+          exclude: Presentation
